@@ -3,39 +3,39 @@ name: PrismaCloud Action
 on:
   pull_request:
 
-env:
-  # Standardized to lowercase to match Linux runner expectations
-  DOCKERFILE: 'Dockerfile'
-
 jobs:
   build-and-scan:
     name: Build and scan Image
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4 # Updated to v4 for Node.js 24 compatibility
+        uses: actions/checkout@v4
 
       - name: Set Image Name and Labels
         run: |
-          # Fallback to repo name if variable isn't set
+          # 1. Automatic Filename Detection
+          if [ -f "Dockerfile" ]; then
+            FILE="Dockerfile"
+          elif [ -f "DockerFile" ]; then
+            FILE="DockerFile"
+          else
+            echo "Error: Neither Dockerfile nor DockerFile found!"
+            ls -R
+            exit 1
+          fi
+          echo "DOCKERFILE=$FILE" >> $GITHUB_ENV
+
+          # 2. Image Name Logic
           IMAGE_NAME=${{ vars.IMAGE_NAME || 'none' }}
           if [[ $IMAGE_NAME == "none" ]]; then
             IMAGE_NAME=$(echo "${{ github.repository }}:${{ github.head_ref }}" | tr '[:upper:]' '[:lower:]')
           fi
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
           
-          # Inject labels into the Dockerfile
-          sed -i '2 i LABEL REPOSITORY="${{ github.repository }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL REPOSITORY_URL="${{ github.repositoryUrl }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL REPOSITORY_OWNER="${{ github.repository_owner }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL ACTOR="${{ github.actor }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL JOB="${{ github.job }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL RUN_ID="${{ github.run_id }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL RUN_NUMBER="${{ github.run_number }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL RUN_ATTEMPT="${{ github.run_attempt }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL EVENT_NAME="${{ github.event_name }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL SOURCE_BRANCH="${{ github.head_ref }}"' ${{ env.DOCKERFILE }}
-          sed -i '2 i LABEL TARGET_BRANCH="${{ github.base_ref }}"' ${{ env.DOCKERFILE }}
+          # 3. Inject labels using the detected filename
+          sed -i "2 i LABEL REPOSITORY=\"${{ github.repository }}\"" $FILE
+          sed -i "2 i LABEL ACTOR=\"${{ github.actor }}\"" $FILE
+          sed -i "2 i LABEL RUN_ID=\"${{ github.run_id }}\"" $FILE
 
       - name: Build the image
         run: docker build -t ${{ env.IMAGE_NAME }} -f ${{ env.DOCKERFILE }} .
