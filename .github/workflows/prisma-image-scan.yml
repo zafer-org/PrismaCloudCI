@@ -1,0 +1,51 @@
+name: PrismaCloud Action
+
+on:
+  pull_request:
+
+env:
+  DOCKERFILE: ${{ vars.DOCKERFILE || 'Dockerfile' }}
+
+jobs:
+  build-and-scan:
+    name: Build and scan Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Set Image Name and Labels # Inject github metadata labels on the file
+        run: |
+          IMAGE_NAME=${{ vars.IMAGE_NAME || 'none' }}
+          [[ $IMAGE_NAME == "none" ]] && IMAGE_NAME=$(echo "${{ github.repository }}:${{ github.head_ref }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          sed -i '3 i LABEL REPOSITORY="${{ github.repository }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL REPOSITORY_URL="${{ github.repositoryUrl }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL REPOSITORY_OWNER="${{ github.repository_owner }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL ACTOR="${{ github.actor }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL JOB="${{ github.job }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL RUN_ID="${{ github.run_id }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL RUN_NUMBER="${{ github.run_number }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL RUN_ATTEMPT="${{ github.run_attempt }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL EVENT_NAME="${{ github.event_name }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL SOURCE_BRANCH="${{ github.head_ref }}"' ${{ env.DOCKERFILE }}
+          sed -i '3 i LABEL TARGET_BRANCH="${{ github.base_ref }}"' ${{ env.DOCKERFILE }}
+
+      - name: Build the image
+        run: docker build -t ${{ env.IMAGE_NAME }} -f ${{ env.DOCKERFILE }} .
+
+      - name: Prisma Cloud image scan # Execute the CI Scan
+        id: scan
+        uses: PaloAltoNetworks/prisma-cloud-scan@v1.6.7
+        with:
+          pcc_console_url: ${{ secrets.PCC_URL }}
+          pcc_user: ${{ secrets.PCC_USER }}
+          pcc_pass: ${{ secrets.PCC_PASS }}
+          image_name: ${{ env.IMAGE_NAME }}
+
+# (Optional) for compatibility with GitHub's code scanning alerts
+#      - name: Upload SARIF file # Upload report
+#        if: ${{ always() }} # necessary if using failure thresholds in the image scan
+#        uses: github/codeql-action/upload-sarif@v3
+#        with:
+#          sarif_file: ${{ steps.scan.outputs.sarif_file }}
